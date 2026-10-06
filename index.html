@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>أفلام مجانية قانونية</title>
+<style>
+  :root{
+    --bg:#0f1a2e; --surface:#182642; --surface2:#21335a; --text:#eaf0fb; --muted:#9fb0cf;
+    --accent:#6cb4ff; --accent-ink:#06223f; --danger:#ff8f8f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"Segoe UI",Tahoma,"Noto Naskh Arabic","Geeza Pro",sans-serif;
+    line-height:1.6; padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0);
+  }
+  header{padding:20px 16px 8px; max-width:960px; margin:0 auto}
+  h1{font-size:1.5rem; margin:0 0 4px; font-weight:700}
+  header p{margin:0; color:var(--muted); font-size:.95rem}
+  .search{display:flex; gap:8px; max-width:960px; margin:12px auto 0; padding:0 16px}
+  .search input{
+    flex:1; min-width:0; font:inherit; color:var(--text); background:var(--surface);
+    border:2px solid var(--surface2); border-radius:12px; padding:12px 14px;
+  }
+  .search input:focus{outline:none; border-color:var(--accent)}
+  button{font:inherit; cursor:pointer; border:0; border-radius:12px}
+  .search button{background:var(--accent); color:var(--accent-ink); font-weight:700; padding:0 20px}
+  button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+  main{max-width:960px; margin:0 auto; padding:16px}
+  #status{color:var(--muted); margin:4px 0 12px}
+  #status.error{color:var(--danger)}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px}
+  .card{background:var(--surface); border-radius:14px; overflow:hidden; display:flex; flex-direction:column}
+  .card img{width:100%; aspect-ratio:2/3; object-fit:cover; background:var(--surface2); display:block}
+  .card .info{padding:10px; display:flex; flex-direction:column; gap:4px; flex:1}
+  .card h3{font-size:.95rem; margin:0; line-height:1.35;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+  .card .meta{color:var(--muted); font-size:.8rem}
+  .card button{margin-top:auto; background:var(--surface2); color:var(--text); padding:9px; font-weight:600}
+  .card button:hover{background:var(--accent); color:var(--accent-ink)}
+
+  #player{display:none; background:var(--surface); border-radius:16px; padding:12px; margin-bottom:18px}
+  #player.open{display:block}
+  #player .bar{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px}
+  #player h2{font-size:1.05rem; margin:0}
+  #player .close{background:var(--surface2); color:var(--text); padding:6px 12px}
+  video,iframe.embed{width:100%; aspect-ratio:16/9; background:#000; border-radius:10px; border:0; display:block}
+  .actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; align-items:center}
+  .dl{background:var(--accent); color:var(--accent-ink); font-weight:700; padding:10px 16px; border-radius:12px; text-decoration:none}
+  .actions select{font:inherit; background:var(--surface2); color:var(--text); border:0; border-radius:10px; padding:9px}
+  .note{color:var(--muted); font-size:.82rem; margin-top:8px}
+  footer{max-width:960px; margin:0 auto; padding:8px 16px 32px; color:var(--muted); font-size:.8rem}
+  @media (prefers-reduced-motion:no-preference){ .card button{transition:background .15s} }
+</style>
+</head>
+<body>
+<header>
+  <h1>أفلام مجانية قانونية</h1>
+  <p>ابحث، شغّل الفيلم في نفس الصفحة، أو حمّله مباشرة.</p>
+</header>
+
+<div class="search" role="search">
+  <input id="q" type="search" placeholder="اكتب اسم الفيلم بالإنجليزية، مثل: Sintel" aria-label="بحث عن فيلم" enterkeyhint="search">
+  <button id="go">بحث</button>
+</div>
+
+<main>
+  <section id="player" aria-live="polite">
+    <div class="bar">
+      <h2 id="ptitle"></h2>
+      <button class="close" id="pclose">إغلاق</button>
+    </div>
+    <div id="pbox"></div>
+    <div class="actions" id="pactions"></div>
+    <p class="note" id="pnote"></p>
+  </section>
+
+  <p id="status"></p>
+  <div class="grid" id="grid"></div>
+</main>
+
+<footer>المصدر: أرشيف الإنترنت (archive.org) — أفلام عامة ومفتوحة المصدر. افتح الملف من متصفح الجوال أو الكمبيوتر وأنت متصل بالإنترنت.</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const COLL = "(collection:feature_films OR collection:opensource_movies OR collection:moviesandfilmsnoir)";
+
+async function search(term){
+  const status = $("status"), grid = $("grid");
+  status.className = ""; status.textContent = "جاري البحث…"; grid.innerHTML = "";
+  const clean = term.trim().replace(/["():\\]/g, " ");
+  const q = clean
+    ? `${COLL} AND mediatype:movies AND title:(${clean})`
+    : `${COLL} AND mediatype:movies`;
+  const url = "https://archive.org/advancedsearch.php?q=" + encodeURIComponent(q) +
+    "&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=30&page=1&output=json";
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error(r.status);
+    const docs = (await r.json()).response.docs;
+    if(!docs.length){ status.textContent = "لا توجد نتائج. جرّب اسمًا بالإنجليزية أو كلمة أقصر."; return; }
+    status.textContent = clean ? `النتائج: ${docs.length}` : "الأكثر تحميلًا";
+    grid.innerHTML = docs.map(d => `
+      <article class="card">
+        <img loading="lazy" src="https://archive.org/services/img/${encodeURIComponent(d.identifier)}" alt="${esc(d.title)}">
+        <div class="info">
+          <h3>${esc(d.title)}</h3>
+          <span class="meta">${esc(d.year || "")}</span>
+          <button data-id="${esc(d.identifier)}" data-title="${esc(d.title)}">تشغيل وتحميل</button>
+        </div>
+      </article>`).join("");
+  }catch(e){
+    status.className = "error";
+    status.textContent = "تعذّر الاتصال بالأرشيف. تأكد من الإنترنت وحاول مرة أخرى.";
+  }
+}
+
+async function openMovie(id, title){
+  const box = $("pbox"), acts = $("pactions"), note = $("pnote");
+  $("ptitle").textContent = title;
+  $("player").classList.add("open");
+  box.innerHTML = ""; acts.innerHTML = ""; note.textContent = "جاري تجهيز الفيلم…";
+  $("player").scrollIntoView({behavior:"smooth", block:"start"});
+  try{
+    const r = await fetch("https://archive.org/metadata/" + encodeURIComponent(id));
+    const meta = await r.json();
+    const vids = (meta.files || []).filter(f => /\.(mp4|m4v|webm|ogv)$/i.test(f.name) && !/_trailer|sample/i.test(f.name));
+    const mp4 = vids.filter(f => /\.(mp4|m4v)$/i.test(f.name));
+    const list = (mp4.length ? mp4 : vids).sort((a,b) => (+b.size||0) - (+a.size||0));
+    if(!list.length){
+      box.innerHTML = `<iframe class="embed" src="https://archive.org/embed/${encodeURIComponent(id)}" allowfullscreen></iframe>`;
+      acts.innerHTML = `<a class="dl" href="https://archive.org/details/${encodeURIComponent(id)}" target="_blank" rel="noopener">فتح صفحة الفيلم</a>`;
+      note.textContent = "لا يوجد ملف مباشر لهذا الفيلم، فتم عرضه بمشغّل الأرشيف.";
+      return;
+    }
+    const fileUrl = f => `https://archive.org/download/${encodeURIComponent(id)}/${f.name.split("/").map(encodeURIComponent).join("/")}`;
+    const mb = f => f.size ? ` (${Math.round(+f.size/1048576)} م.ب)` : "";
+    // Prefer a mid-size file for streaming: smallest of the top sizes is faster
+    const play = list[Math.min(list.length-1, Math.floor(list.length/2))] || list[0];
+    box.innerHTML = `<video controls playsinline preload="metadata" src="${fileUrl(play)}"></video>`;
+    const sel = list.map((f,i) => `<option value="${i}" ${f===play?"selected":""}>${esc(f.name)}${mb(f)}</option>`).join("");
+    acts.innerHTML = `<select id="fsel" aria-label="اختيار الملف">${sel}</select>
+      <a class="dl" id="dl" href="${fileUrl(play)}" target="_blank" rel="noopener">تحميل</a>`;
+    note.textContent = "إن لم يعمل التشغيل، اختر ملفًا آخر من القائمة.";
+    const v = box.querySelector("video");
+    v.addEventListener("error", () => { note.textContent = "تعذّر تشغيل هذا الملف. جرّب ملفًا آخر من القائمة."; });
+    $("fsel").addEventListener("change", e => {
+      const f = list[+e.target.value];
+      v.src = fileUrl(f); v.play().catch(()=>{});
+      $("dl").href = fileUrl(f);
+    });
+  }catch(e){
+    note.textContent = "تعذّر تجهيز الفيلم. حاول مرة أخرى.";
+  }
+}
+
+$("go").addEventListener("click", () => search($("q").value));
+$("q").addEventListener("keydown", e => { if(e.key === "Enter") search($("q").value); });
+$("grid").addEventListener("click", e => {
+  const b = e.target.closest("button[data-id]");
+  if(b) openMovie(b.dataset.id, b.dataset.title);
+});
+$("pclose").addEventListener("click", () => {
+  $("pbox").innerHTML = ""; $("player").classList.remove("open");
+});
+search("");
+</script>
+</body>
+</html>
